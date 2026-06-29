@@ -2290,6 +2290,10 @@ function initEditor() {
     // Create real zone
     const zoneId = 'zone_' + Date.now();
     const props = getDefaultZoneProps();
+    const typeDefaults = getZoneTypeFontDefaults(editorState.activeZoneType);
+    if (!editorState.selectedZone && props.fontFamily === 'Poppins' && props.fontWeight === '400' && !props.fontItalic) {
+      Object.assign(props, typeDefaults);
+    }
     const zone = {
       id: zoneId,
       type: editorState.activeZoneType,
@@ -2565,6 +2569,23 @@ function updateFontPreview() {
   preview.style.color = props.color;
   preview.style.textAlign = props.align;
   preview.textContent = `${props.fontFamily} Aa`;
+}
+
+function getZoneTypeFontDefaults(type) {
+  if (type === 'day') {
+    return {
+      fontFamily: 'Bebas Neue',
+      fontWeight: '400',
+      fontItalic: false,
+      fontStyle: 'normal',
+    };
+  }
+  return {
+    fontFamily: 'Poppins',
+    fontWeight: '400',
+    fontItalic: false,
+    fontStyle: 'normal',
+  };
 }
 
 function getDefaultZoneProps() {
@@ -3411,7 +3432,6 @@ async function renderFlyer(vd, template, opts) {
     canvas.width = template.width;
     canvas.height = template.height;
     const ctx = canvas.getContext('2d');
-    const referenceStyleZone = template.zones.find(z => z.type === 'ref') || template.zones.find(z => z.type === 'verse');
 
     const doRender = () => {
       // Background
@@ -3431,16 +3451,6 @@ async function renderFlyer(vd, template, opts) {
           text = vd.verse?.reference || vd.ref;
         } else if (zone.type === 'day') {
           text = vd.dayLabel || getDayLabelText(vd.day, opts.totalDaysInYear);
-          if (referenceStyleZone) {
-            renderZone = {
-              ...zone,
-              fontFamily: referenceStyleZone.fontFamily || zone.fontFamily,
-              fontSize: referenceStyleZone.fontSize || zone.fontSize,
-              maxFontSize: referenceStyleZone.maxFontSize || zone.maxFontSize,
-              lineHeight: referenceStyleZone.lineHeight || zone.lineHeight,
-              fontStyle: referenceStyleZone.fontStyle || zone.fontStyle,
-            };
-          }
         }
 
         drawTextInZone(ctx, text, renderZone, opts);
@@ -3793,7 +3803,7 @@ function loadDemoData() {
       {
         id: 'zone_day', type: 'day',
         x: 60, y: 50, width: 400, height: 80,
-        fontFamily: 'Poppins', fontSize: 38, color: '#C9A84C',
+        fontFamily: 'Bebas Neue', fontSize: 38, color: '#C9A84C',
         align: 'left', lineHeight: 1.2, fontStyle: 'bold', maxFontSize: 46,
       },
       {
