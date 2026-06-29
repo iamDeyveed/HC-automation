@@ -278,6 +278,59 @@ window.KJV_LOOKUP=function(ref){
   .btn.template-drop-target.drag-over {
     transform: translateY(-1px);
   }
+  .template-upload-panel {
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    text-align: center;
+    cursor: pointer;
+    border: 2px dashed var(--border-bright);
+    background:
+      linear-gradient(135deg, rgba(122,112,242,0.06), rgba(201,168,76,0.05)),
+      var(--surface);
+  }
+  .template-upload-panel:hover,
+  .template-upload-panel.drag-over {
+    border-color: var(--gold);
+    background:
+      linear-gradient(135deg, rgba(122,112,242,0.11), rgba(201,168,76,0.10)),
+      var(--surface);
+  }
+  .template-upload-panel .upload-icon {
+    width: 42px;
+    height: 42px;
+    color: var(--gold);
+  }
+  .template-upload-panel h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--text);
+    margin: 0;
+  }
+  .template-upload-panel p {
+    max-width: 520px;
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .template-upload-panel .drop-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(122,112,242,0.10);
+    color: var(--gold);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
   .upload-zone .upload-icon { width: 32px; height: 32px; margin: 0 auto 12px; color: var(--gold-dim); }
   .upload-zone h3 { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
   .upload-zone p { font-size: 13px; color: var(--text-dim); }
@@ -1643,11 +1696,12 @@ function renderTemplates() {
     <p class="section-subtitle">Upload flyer backgrounds and define text placement zones for verse content, references, and day labels.</p>
 
     ${state.templates.length === 0 ? `
-      <div class="card template-drop-target" data-template-drop-target style="text-align:center;padding:60px">
-        <div class="empty-icon" style="opacity:0.3;margin-bottom:16px">${icon('image')}</div>
-        <h3 class="section-title">No Templates Yet</h3>
-        <p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">Upload a PNG flyer background to get started.</p>
-        <button class="btn btn-primary template-drop-target" data-template-drop-target onclick="openAddTemplateModal()">Upload Template</button>
+      <div class="card template-upload-panel template-drop-target" data-template-drop-target onclick="openAddTemplateModal()" role="button" tabindex="0" aria-label="Upload or drop a template image">
+        <div class="upload-icon">${icon('upload')}</div>
+        <h3>Drop Your Template Image Here</h3>
+        <p>Drag a PNG or JPG from your gallery onto this box, or click here to choose an image from your computer.</p>
+        <div class="drop-hint">${icon('image')} PNG / JPG templates</div>
+        <button class="btn btn-primary" type="button" onclick="event.stopPropagation();openAddTemplateModal()">Upload Template</button>
       </div>
     ` : `
       <div class="grid-3" style="gap:16px">
@@ -1682,9 +1736,20 @@ function renderTemplates() {
   </div>`;
 }
 
+function isTemplateImageFile(file) {
+  return !!file && (
+    file.type.startsWith('image/') ||
+    /\.(png|jpe?g|webp|gif)$/i.test(file.name || '')
+  );
+}
+
 function getDroppedTemplateImageFile(event) {
-  const files = Array.from(event.dataTransfer?.files || []);
-  return files.find(file => file.type.startsWith('image/')) || files[0] || null;
+  const itemFiles = Array.from(event.dataTransfer?.items || [])
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter(Boolean);
+  const files = itemFiles.length ? itemFiles : Array.from(event.dataTransfer?.files || []);
+  return files.find(isTemplateImageFile) || files[0] || null;
 }
 
 function setupTemplateDropTarget(target) {
@@ -1714,6 +1779,12 @@ function setupTemplateDropTarget(target) {
       return;
     }
     openAddTemplateModal(file);
+  });
+  target.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && target.getAttribute('role') === 'button') {
+      e.preventDefault();
+      openAddTemplateModal();
+    }
   });
 }
 
@@ -1766,6 +1837,8 @@ function openAddTemplateModal(initialFile = null) {
       </div>
     </div>`;
   area.insertAdjacentHTML('beforeend', modalHTML);
+  const modal = document.getElementById('add-tpl-modal');
+  requestAnimationFrame(() => modal?.classList.add('show'));
 
   const input = document.getElementById('tpl-file');
   const zone = document.getElementById('tpl-upload-zone');
@@ -1779,6 +1852,10 @@ function openAddTemplateModal(initialFile = null) {
       e.preventDefault();
       input?.click();
     }
+  });
+  zone?.addEventListener('click', e => {
+    e.preventDefault();
+    input?.click();
   });
   zone?.addEventListener('dragenter', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone?.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
@@ -1799,7 +1876,7 @@ function handleTemplateFile(file) {
   const img = document.getElementById('tpl-preview');
   if (!file || !img) return;
 
-  if (!file.type.startsWith('image/')) {
+  if (!isTemplateImageFile(file)) {
     if (status) {
       status.textContent = 'Please choose an image file.';
       status.style.color = 'var(--danger)';
