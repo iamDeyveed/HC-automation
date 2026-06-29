@@ -1702,12 +1702,12 @@ function openAddTemplateModal() {
           </div>
           <div class="form-group">
             <label class="form-label">Background Image (PNG/JPG)</label>
-            <div class="upload-zone" id="tpl-upload-zone" role="button" tabindex="0" onclick="openTemplateFilePicker(event)" onkeydown="handleTemplateUploadKeydown(event)">
-              <input type="file" id="tpl-file" accept="image/*" onclick="event.stopPropagation()" onchange="previewTemplateImage(this)"/>
+            <input type="file" id="tpl-file" accept="image/*" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"/>
+            <label class="upload-zone" id="tpl-upload-zone" for="tpl-file" tabindex="0">
               <div class="upload-icon">${icon('upload')}</div>
               <h3>Click to upload</h3>
-              <p>PNG or JPG, recommended 1080×1080</p>
-            </div>
+              <p>PNG or JPG, recommended 1080×1080. You can also drag an image here.</p>
+            </label>
             <div id="tpl-upload-status" class="text-small" style="margin-top:8px;color:var(--text-dim)"></div>
             <img id="tpl-preview" style="display:none;width:100%;margin-top:10px;border-radius:6px;border:1px solid var(--border)"/>
           </div>
@@ -1724,34 +1724,30 @@ function openAddTemplateModal() {
     </div>`;
   area.insertAdjacentHTML('beforeend', modalHTML);
 
-  // drag-drop
+  const input = document.getElementById('tpl-file');
   const zone = document.getElementById('tpl-upload-zone');
-  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-  zone.addEventListener('drop', e => {
-    e.preventDefault(); zone.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
+  input?.addEventListener('change', e => {
+    const file = e.target.files?.[0];
+    if (file) handleTemplateFile(file);
+    e.target.value = '';
+  });
+  zone?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      input?.click();
+    }
+  });
+  zone?.addEventListener('dragenter', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone?.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone?.addEventListener('dragleave', e => {
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+  });
+  zone?.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer?.files?.[0];
     if (file) handleTemplateFile(file);
   });
-}
-
-function openTemplateFilePicker(event) {
-  event?.preventDefault();
-  event?.stopPropagation();
-  const input = document.getElementById('tpl-file');
-  if (!input) return;
-  input.value = '';
-  input.click();
-}
-
-function handleTemplateUploadKeydown(event) {
-  if (event.key !== 'Enter' && event.key !== ' ') return;
-  openTemplateFilePicker(event);
-}
-
-function previewTemplateImage(input) {
-  const file = input.files[0];
-  if (file) handleTemplateFile(file);
 }
 
 function handleTemplateFile(file) {
