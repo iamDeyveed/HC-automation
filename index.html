@@ -399,6 +399,35 @@ window.KJV_LOOKUP=function(ref){
   .zone-list-item .zone-label { display: flex; align-items: center; gap: 6px; }
   .zone-delete { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px; padding: 2px 4px; }
   .zone-delete:hover { color: var(--danger); }
+  .type-panel {
+    display: grid;
+    gap: 12px;
+  }
+  .selected-zone-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+  }
+  .selected-zone-card strong { font-size: 13px; }
+  .selected-zone-card .zone-meta {
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-top: 6px;
+  }
+  .font-preview {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1.2;
+  }
 
   /* ========= GENERATE PAGE ========= */
   .generate-steps {
@@ -1973,6 +2002,21 @@ let editorState = {
 
 const ZONE_COLORS = { verse: '#FFD700', ref: '#FFA500', day: '#FFFF00' };
 const ZONE_LABELS = { verse: 'Verse Text', ref: 'Scripture Reference', day: 'Day Label' };
+const FONT_FAMILIES = [
+  'Poppins',
+  'Bebas Neue',
+  'Playfair Display',
+  'Georgia',
+  'Garamond',
+  'Times New Roman',
+  'Arial',
+  'Arial Black',
+  'Impact',
+  'Verdana',
+  'Trebuchet MS',
+  'Courier New',
+  'Lucida Handwriting',
+];
 const WEB_FONT_FAMILIES = new Set(['Bebas Neue', 'Poppins', 'Playfair Display']);
 const fontLoadPromises = new Map();
 
@@ -1983,30 +2027,50 @@ function cssFontFamily(fontFamily) {
   return `"${family.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+function fontFamilyOptions(selected = 'Poppins') {
+  const selectedFamily = String(selected || 'Poppins').trim();
+  const options = FONT_FAMILIES.map(family => {
+    const isSelected = family === selectedFamily ? ' selected' : '';
+    return `<option value="${escapeHTML(family)}"${isSelected}>${escapeHTML(family)}</option>`;
+  }).join('');
+  const customSelected = selectedFamily && !FONT_FAMILIES.includes(selectedFamily) ? ' selected' : '';
+  return options + `<option value="Custom"${customSelected}>Custom font...</option>`;
+}
+
+function getZoneFontWeight(zone) {
+  if (zone?.fontWeight) return String(zone.fontWeight);
+  return zone?.fontStyle === 'bold' ? '700' : '400';
+}
+
+function getZoneFontStyle(zone) {
+  if (zone?.fontItalic === true || zone?.fontStyle === 'italic') return 'italic';
+  return 'normal';
+}
+
 function getCanvasFont(zone, fontSize) {
-  const style = zone.fontStyle === 'italic' ? 'italic' : 'normal';
-  const weight = zone.fontStyle === 'bold' ? '700' : '400';
+  const style = getZoneFontStyle(zone);
+  const weight = getZoneFontWeight(zone);
   return `${style} ${weight} ${fontSize}px ${cssFontFamily(zone.fontFamily)}, sans-serif`;
 }
 
-function ensureFontLoaded(fontFamily) {
+function ensureFontLoaded(fontFamily, fontWeight = '400', fontStyle = 'normal') {
   const family = String(fontFamily || '').trim();
   if (!family || !WEB_FONT_FAMILIES.has(family) || !document.fonts) return Promise.resolve();
-  if (!fontLoadPromises.has(family)) {
+  const key = `${family}:${fontWeight}:${fontStyle}`;
+  if (!fontLoadPromises.has(key)) {
     const loadPromise = document.fonts
-      .load(`400 48px ${cssFontFamily(family)}`, 'HOLINESS Scripture 0123456789')
+      .load(`${fontStyle} ${fontWeight} 48px ${cssFontFamily(family)}`, 'HOLINESS Scripture 0123456789')
       .then(() => document.fonts.ready)
       .catch(err => {
         console.warn(`Could not verify font load for ${family}`, err);
       });
-    fontLoadPromises.set(family, loadPromise);
+    fontLoadPromises.set(key, loadPromise);
   }
-  return fontLoadPromises.get(family);
+  return fontLoadPromises.get(key);
 }
 
 function ensureTemplateFontsLoaded(template) {
-  const families = [...new Set((template?.zones || []).map(z => z.fontFamily).filter(Boolean))];
-  return Promise.all(families.map(ensureFontLoaded));
+  return Promise.all((template?.zones || []).map(z => ensureFontLoaded(z.fontFamily, getZoneFontWeight(z), getZoneFontStyle(z))));
 }
 
 function renderEditor() {
@@ -2078,54 +2142,73 @@ function renderEditor() {
       <div class="panel-section">
         <div class="panel-section-title">Zone Properties</div>
         <div id="zone-props">
-          <p style="font-size:12px;color:var(--text-dim)">Select a zone to edit its properties.</p>
+          <p style="font-size:12px;color:var(--text-dim)">Select a zone to edit that text. The controls below apply only to the selected zone; if nothing is selected, they become the style for the next zone you draw.</p>
         </div>
       </div>
 
       <div class="panel-section">
-        <div class="panel-section-title">Default Font Settings</div>
-        <div class="form-group">
-          <label class="form-label">Font Family</label>
-          <select class="form-input" id="prop-font" onchange="applyZoneProps()">
-            <option>Poppins</option>
-            <option>Bebas Neue</option>
-            <option>Playfair Display</option>
-            <option>Georgia</option>
-            <option>Arial</option>
-            <option>Times New Roman</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Font Size</label>
-          <input type="number" class="form-input" id="prop-size" value="32" onchange="applyZoneProps()"/>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Color</label>
-          <input type="color" class="form-input" id="prop-color" value="#FFFFFF" style="height:40px" onchange="applyZoneProps()"/>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Alignment</label>
-          <select class="form-input" id="prop-align" onchange="applyZoneProps()">
-            <option value="center">Center</option>
-            <option value="left">Left</option>
-            <option value="right">Right</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Line Height</label>
-          <input type="number" class="form-input" id="prop-lh" value="1.4" step="0.1" onchange="applyZoneProps()"/>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Font Style</label>
-          <select class="form-input" id="prop-style" onchange="applyZoneProps()">
-            <option value="normal">Normal</option>
-            <option value="italic">Italic</option>
-            <option value="bold">Bold</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Max Font Size (auto-scale)</label>
-          <input type="number" class="form-input" id="prop-maxsize" value="48" onchange="applyZoneProps()"/>
+        <div class="panel-section-title">Typography</div>
+        <div class="type-panel">
+          <div class="font-preview" id="font-preview">Aa Holiness</div>
+          <div class="form-group">
+            <label class="form-label">Font Family</label>
+            <select class="form-input" id="prop-font" onchange="handleFontFamilyChange()">
+              ${fontFamilyOptions('Poppins')}
+            </select>
+          </div>
+          <div class="form-group" id="custom-font-wrap" style="display:none">
+            <label class="form-label">Custom Font Name</label>
+            <input class="form-input" id="prop-custom-font" placeholder="Type an installed font name" oninput="applyZoneProps()"/>
+          </div>
+          <div class="row-2">
+            <div class="form-group">
+              <label class="form-label">Size</label>
+              <input type="number" class="form-input" id="prop-size" value="32" min="8" max="300" onchange="applyZoneProps()"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Auto Size</label>
+              <input type="number" class="form-input" id="prop-maxsize" value="48" min="8" max="300" onchange="applyZoneProps()"/>
+            </div>
+          </div>
+          <div class="row-2">
+            <div class="form-group">
+              <label class="form-label">Weight</label>
+              <select class="form-input" id="prop-weight" onchange="applyZoneProps()">
+                <option value="300">Light</option>
+                <option value="400" selected>Regular</option>
+                <option value="500">Medium</option>
+                <option value="600">Semibold</option>
+                <option value="700">Bold</option>
+                <option value="800">Extra Bold</option>
+                <option value="900">Black</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Style</label>
+              <select class="form-input" id="prop-italic" onchange="applyZoneProps()">
+                <option value="normal" selected>Normal</option>
+                <option value="italic">Italic</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Color</label>
+            <input type="color" class="form-input" id="prop-color" value="#FFFFFF" style="height:40px" onchange="applyZoneProps()"/>
+          </div>
+          <div class="row-2">
+            <div class="form-group">
+              <label class="form-label">Alignment</label>
+              <select class="form-input" id="prop-align" onchange="applyZoneProps()">
+                <option value="left">Left</option>
+                <option value="center" selected>Center</option>
+                <option value="right">Right</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Line Height</label>
+              <input type="number" class="form-input" id="prop-lh" value="1.4" min="0.8" max="3" step="0.1" onchange="applyZoneProps()"/>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2160,6 +2243,11 @@ function initEditor() {
 
   // Restore existing zones
   t.zones.forEach(z => addZoneToCanvas(z, scale));
+  updateCustomFontVisibility();
+  updateFontPreview();
+  if (editorState.selectedZone && t.zones.some(z => z.id === editorState.selectedZone)) {
+    selectZoneItem(editorState.selectedZone);
+  }
 
   // Drawing mode
   let isDrawing = false, startX, startY, drawRect;
@@ -2209,13 +2297,7 @@ function initEditor() {
       y: Math.round(top / scale),
       width: Math.round(width / scale),
       height: Math.round(height / scale),
-      fontFamily: document.getElementById('prop-font')?.value || 'Playfair Display',
-      fontSize: parseInt(document.getElementById('prop-size')?.value) || 32,
-      color: document.getElementById('prop-color')?.value || '#FFFFFF',
-      align: document.getElementById('prop-align')?.value || 'center',
-      lineHeight: parseFloat(document.getElementById('prop-lh')?.value) || 1.4,
-      fontStyle: document.getElementById('prop-style')?.value || 'normal',
-      maxFontSize: parseInt(document.getElementById('prop-maxsize')?.value) || 48,
+      ...props,
     };
     t.zones.push(zone);
     const zoneObjects = addZoneToCanvas(zone, scale);
@@ -2244,7 +2326,7 @@ function computeEditorScale(w, h) {
 function addZoneToCanvas(zone, scale) {
   const s = scale || computeEditorScale(state.selectedTemplate.width, state.selectedTemplate.height);
   const color = ZONE_COLORS[zone.type];
-  ensureFontLoaded(zone.fontFamily).then(() => fabricCanvas?.requestRenderAll());
+  ensureFontLoaded(zone.fontFamily, getZoneFontWeight(zone), getZoneFontStyle(zone)).then(() => fabricCanvas?.requestRenderAll());
 
   // Label preview
   const labelTexts = { verse: '"Verse Text..."', ref: 'John 3:16', day: 'Day 1' };
@@ -2256,8 +2338,9 @@ function addZoneToCanvas(zone, scale) {
     fill: zone.color || '#ffffff',
     fontFamily: zone.fontFamily || 'serif',
     textAlign: zone.align || 'center',
-    fontStyle: zone.fontStyle === 'italic' ? 'italic' : 'normal',
-    fontWeight: zone.fontStyle === 'bold' ? 'bold' : 'normal',
+    fontStyle: getZoneFontStyle(zone),
+    fontWeight: getZoneFontWeight(zone),
+    lineHeight: zone.lineHeight || 1.4,
     selectable: false, evented: false,
     originX: 'left', originY: 'top',
   });
@@ -2284,16 +2367,29 @@ function addZoneToCanvas(zone, scale) {
     selectZoneItem(rect.zoneId);
   });
 
-  // Sync position on move
-  rect.on('moving', () => {
+  const syncRectToZone = () => {
     const z = state.selectedTemplate.zones.find(z => z.id === rect.zoneId);
     if (z) {
       const sc = computeEditorScale(state.selectedTemplate.width, state.selectedTemplate.height);
       z.x = Math.round(rect.left / sc);
       z.y = Math.round(rect.top / sc);
+      z.width = Math.round(rect.getScaledWidth() / sc);
+      z.height = Math.round(rect.getScaledHeight() / sc);
     }
-    text.set({ left: rect.left + 4, top: rect.top + 4 });
+    text.set({
+      left: rect.left + 4,
+      top: rect.top + 4,
+      width: Math.max(1, rect.getScaledWidth() - 8),
+    });
     fabricCanvas.renderAll();
+  };
+
+  // Sync position and size while editing the zone box.
+  rect.on('moving', syncRectToZone);
+  rect.on('scaling', syncRectToZone);
+  rect.on('modified', () => {
+    syncRectToZone();
+    if (editorState.selectedZone === rect.zoneId) selectZoneItem(rect.zoneId);
   });
 
   fabricCanvas.renderAll();
@@ -2339,7 +2435,7 @@ function refreshZoneList() {
   const listEl = document.getElementById('zone-list');
   if (!listEl) return;
   listEl.innerHTML = t.zones.map(z => `
-    <div class="zone-list-item" id="zone-item-${z.id}">
+    <div class="zone-list-item ${editorState.selectedZone === z.id ? 'selected' : ''}" id="zone-item-${z.id}" onclick="selectZoneItem('${z.id}')">
       <div class="zone-label">
         <span class="zone-dot" style="background:${ZONE_COLORS[z.type]}"></span>
         <span style="font-size:12px">${ZONE_LABELS[z.type]}</span>
@@ -2349,49 +2445,76 @@ function refreshZoneList() {
   `).join('');
 }
 
+function syncZoneListSelection(id) {
+  document.querySelectorAll('.zone-list-item').forEach(item => item.classList.remove('selected'));
+  document.getElementById('zone-item-' + id)?.classList.add('selected');
+}
+
+function setCanvasActiveZone(id) {
+  if (!fabricCanvas) return;
+  const active = fabricCanvas.getActiveObject();
+  if (active?.zoneId === id) return;
+  const rect = fabricCanvas.getObjects('rect').find(obj => obj.zoneId === id);
+  if (rect) {
+    fabricCanvas.setActiveObject(rect);
+    fabricCanvas.requestRenderAll();
+  }
+}
+
 function selectZoneItem(id) {
   const z = state.selectedTemplate.zones.find(z => z.id === id);
   if (!z) return;
   editorState.selectedZone = id;
+  syncZoneListSelection(id);
+  setCanvasActiveZone(id);
 
   const fontEl = document.getElementById('prop-font');
+  const customFontEl = document.getElementById('prop-custom-font');
   const sizeEl = document.getElementById('prop-size');
   const colorEl = document.getElementById('prop-color');
   const alignEl = document.getElementById('prop-align');
   const lineHeightEl = document.getElementById('prop-lh');
-  const styleEl = document.getElementById('prop-style');
+  const weightEl = document.getElementById('prop-weight');
+  const italicEl = document.getElementById('prop-italic');
   const maxSizeEl = document.getElementById('prop-maxsize');
-  if (fontEl) fontEl.value = z.fontFamily || 'Poppins';
+  const selectedFamily = z.fontFamily || 'Poppins';
+  if (fontEl) fontEl.value = FONT_FAMILIES.includes(selectedFamily) ? selectedFamily : 'Custom';
+  if (customFontEl) customFontEl.value = FONT_FAMILIES.includes(selectedFamily) ? '' : selectedFamily;
   if (sizeEl) sizeEl.value = z.fontSize || 32;
   if (colorEl) colorEl.value = z.color || '#FFFFFF';
   if (alignEl) alignEl.value = z.align || 'center';
   if (lineHeightEl) lineHeightEl.value = z.lineHeight || 1.4;
-  if (styleEl) styleEl.value = z.fontStyle || 'normal';
+  if (weightEl) weightEl.value = getZoneFontWeight(z);
+  if (italicEl) italicEl.value = getZoneFontStyle(z);
   if (maxSizeEl) maxSizeEl.value = z.maxFontSize || 48;
+  updateCustomFontVisibility();
+  updateFontPreview();
 
   // Show props
   const propsEl = document.getElementById('zone-props');
   if (propsEl) {
     propsEl.innerHTML = `
-      <div style="background:var(--surface2);border-radius:6px;padding:10px;font-size:12px">
+      <div class="selected-zone-card">
         <div><strong style="color:${ZONE_COLORS[z.type]}">${ZONE_LABELS[z.type]}</strong></div>
-        <div style="color:var(--text-dim);margin-top:4px">
+        <div class="zone-meta">
           x:${z.x}, y:${z.y}<br>
           ${z.width}×${z.height}px<br>
-          ${z.fontFamily} ${z.fontSize}px
+          ${z.fontFamily || 'Poppins'} ${getZoneFontWeight(z)} ${getZoneFontStyle(z)} ${z.fontSize}px
         </div>
       </div>`;
   }
 }
 
 function applyZoneProps() {
+  updateCustomFontVisibility();
+  updateFontPreview();
   const zoneId = editorState.selectedZone;
   if (!zoneId || !state.selectedTemplate) return;
   const z = state.selectedTemplate.zones.find(z => z.id === zoneId);
   if (!z) return;
 
   Object.assign(z, getDefaultZoneProps());
-  ensureFontLoaded(z.fontFamily).then(() => fabricCanvas?.requestRenderAll());
+  ensureFontLoaded(z.fontFamily, getZoneFontWeight(z), getZoneFontStyle(z)).then(() => fabricCanvas?.requestRenderAll());
 
   if (fabricCanvas) {
     const sc = computeEditorScale(state.selectedTemplate.width, state.selectedTemplate.height);
@@ -2402,8 +2525,9 @@ function applyZoneProps() {
         fontSize: Math.min(z.fontSize * sc, 22),
         fill: z.color || '#ffffff',
         textAlign: z.align || 'center',
-        fontStyle: z.fontStyle === 'italic' ? 'italic' : 'normal',
-        fontWeight: z.fontStyle === 'bold' ? 'bold' : 'normal',
+        fontStyle: getZoneFontStyle(z),
+        fontWeight: getZoneFontWeight(z),
+        lineHeight: z.lineHeight || 1.4,
       });
     });
     fabricCanvas.requestRenderAll();
@@ -2412,14 +2536,49 @@ function applyZoneProps() {
   selectZoneItem(zoneId);
 }
 
+function getSelectedFontFamilyValue() {
+  const selected = document.getElementById('prop-font')?.value || 'Poppins';
+  if (selected !== 'Custom') return selected;
+  return document.getElementById('prop-custom-font')?.value.trim() || 'Poppins';
+}
+
+function handleFontFamilyChange() {
+  updateCustomFontVisibility();
+  applyZoneProps();
+}
+
+function updateCustomFontVisibility() {
+  const wrap = document.getElementById('custom-font-wrap');
+  const fontEl = document.getElementById('prop-font');
+  if (!wrap || !fontEl) return;
+  wrap.style.display = fontEl.value === 'Custom' ? 'block' : 'none';
+}
+
+function updateFontPreview() {
+  const preview = document.getElementById('font-preview');
+  if (!preview) return;
+  const props = getDefaultZoneProps();
+  preview.style.fontFamily = `${cssFontFamily(props.fontFamily)}, sans-serif`;
+  preview.style.fontSize = Math.min(props.fontSize, 30) + 'px';
+  preview.style.fontWeight = props.fontWeight;
+  preview.style.fontStyle = props.fontItalic ? 'italic' : 'normal';
+  preview.style.color = props.color;
+  preview.style.textAlign = props.align;
+  preview.textContent = `${props.fontFamily} Aa`;
+}
+
 function getDefaultZoneProps() {
+  const fontWeight = document.getElementById('prop-weight')?.value || '400';
+  const fontItalic = document.getElementById('prop-italic')?.value === 'italic';
   return {
-    fontFamily: document.getElementById('prop-font')?.value || 'Playfair Display',
+    fontFamily: getSelectedFontFamilyValue(),
     fontSize: parseInt(document.getElementById('prop-size')?.value) || 32,
     color: document.getElementById('prop-color')?.value || '#FFFFFF',
     align: document.getElementById('prop-align')?.value || 'center',
     lineHeight: parseFloat(document.getElementById('prop-lh')?.value) || 1.4,
-    fontStyle: document.getElementById('prop-style')?.value || 'normal',
+    fontWeight,
+    fontItalic,
+    fontStyle: fontItalic ? 'italic' : (parseInt(fontWeight, 10) >= 700 ? 'bold' : 'normal'),
     maxFontSize: parseInt(document.getElementById('prop-maxsize')?.value) || 48,
   };
 }
