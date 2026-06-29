@@ -1675,6 +1675,7 @@ function renderTemplates() {
 }
 
 function openAddTemplateModal() {
+  document.getElementById('add-tpl-modal')?.remove();
   const area = document.getElementById('template-modal-area') || document.body;
   const modalHTML = `
     <div class="modal-overlay" id="add-tpl-modal" onclick="if(event.target===this)closeModal('add-tpl-modal')">
@@ -1701,12 +1702,13 @@ function openAddTemplateModal() {
           </div>
           <div class="form-group">
             <label class="form-label">Background Image (PNG/JPG)</label>
-            <div class="upload-zone" id="tpl-upload-zone" onclick="document.getElementById('tpl-file').click()">
-              <input type="file" id="tpl-file" accept="image/*" onchange="previewTemplateImage(this)"/>
+            <div class="upload-zone" id="tpl-upload-zone" role="button" tabindex="0" onclick="openTemplateFilePicker(event)" onkeydown="handleTemplateUploadKeydown(event)">
+              <input type="file" id="tpl-file" accept="image/*" onclick="event.stopPropagation()" onchange="previewTemplateImage(this)"/>
               <div class="upload-icon">${icon('upload')}</div>
               <h3>Click to upload</h3>
               <p>PNG or JPG, recommended 1080×1080</p>
             </div>
+            <div id="tpl-upload-status" class="text-small" style="margin-top:8px;color:var(--text-dim)"></div>
             <img id="tpl-preview" style="display:none;width:100%;margin-top:10px;border-radius:6px;border:1px solid var(--border)"/>
           </div>
           <div class="form-group">
@@ -1720,7 +1722,7 @@ function openAddTemplateModal() {
         </div>
       </div>
     </div>`;
-  document.body.insertAdjacentHTML('beforeend', modalHTML);
+  area.insertAdjacentHTML('beforeend', modalHTML);
 
   // drag-drop
   const zone = document.getElementById('tpl-upload-zone');
@@ -1733,18 +1735,69 @@ function openAddTemplateModal() {
   });
 }
 
+function openTemplateFilePicker(event) {
+  event?.preventDefault();
+  event?.stopPropagation();
+  const input = document.getElementById('tpl-file');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
+function handleTemplateUploadKeydown(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  openTemplateFilePicker(event);
+}
+
 function previewTemplateImage(input) {
   const file = input.files[0];
   if (file) handleTemplateFile(file);
 }
 
 function handleTemplateFile(file) {
+  const status = document.getElementById('tpl-upload-status');
+  const img = document.getElementById('tpl-preview');
+  if (!file || !img) return;
+
+  if (!file.type.startsWith('image/')) {
+    if (status) {
+      status.textContent = 'Please choose an image file.';
+      status.style.color = 'var(--danger)';
+    }
+    return;
+  }
+
+  if (status) {
+    status.textContent = `Loading ${file.name}...`;
+    status.style.color = 'var(--text-dim)';
+  }
+
   const reader = new FileReader();
   reader.onload = e => {
-    const img = document.getElementById('tpl-preview');
-    img.src = e.target.result;
+    const imageData = e.target.result;
+    img.onload = () => {
+      if (status) {
+        status.textContent = `Uploaded ${file.name}`;
+        status.style.color = 'var(--success)';
+      }
+    };
+    img.onerror = () => {
+      img.style.display = 'none';
+      img.dataset.imageData = '';
+      if (status) {
+        status.textContent = 'That image could not be loaded. Try another PNG or JPG.';
+        status.style.color = 'var(--danger)';
+      }
+    };
+    img.dataset.imageData = imageData;
+    img.src = imageData;
     img.style.display = 'block';
-    img.dataset.imageData = e.target.result;
+  };
+  reader.onerror = () => {
+    if (status) {
+      status.textContent = 'Could not read that image file.';
+      status.style.color = 'var(--danger)';
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -1754,7 +1807,7 @@ function saveNewTemplate() {
   const w = parseInt(document.getElementById('tpl-w').value) || 1080;
   const h = parseInt(document.getElementById('tpl-h').value) || 1350;
   const img = document.getElementById('tpl-preview');
-  const imageData = img.style.display !== 'none' ? img.src : null;
+  const imageData = img?.dataset.imageData || null;
   const bgColor = document.getElementById('tpl-bg-color').value;
 
   const template = {
@@ -1803,6 +1856,41 @@ let editorState = {
 
 const ZONE_COLORS = { verse: '#FFD700', ref: '#FFA500', day: '#FFFF00' };
 const ZONE_LABELS = { verse: 'Verse Text', ref: 'Scripture Reference', day: 'Day Label' };
+const WEB_FONT_FAMILIES = new Set(['Bebas Neue', 'Poppins', 'Playfair Display']);
+const fontLoadPromises = new Map();
+
+function cssFontFamily(fontFamily) {
+  const family = String(fontFamily || 'Poppins').trim();
+  if (!family) return 'Poppins';
+  if (/^(serif|sans-serif|monospace|cursive|fantasy|system-ui)$/i.test(family)) return family;
+  return `"${family.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function getCanvasFont(zone, fontSize) {
+  const style = zone.fontStyle === 'italic' ? 'italic' : 'normal';
+  const weight = zone.fontStyle === 'bold' ? '700' : '400';
+  return `${style} ${weight} ${fontSize}px ${cssFontFamily(zone.fontFamily)}, sans-serif`;
+}
+
+function ensureFontLoaded(fontFamily) {
+  const family = String(fontFamily || '').trim();
+  if (!family || !WEB_FONT_FAMILIES.has(family) || !document.fonts) return Promise.resolve();
+  if (!fontLoadPromises.has(family)) {
+    const loadPromise = document.fonts
+      .load(`400 48px ${cssFontFamily(family)}`, 'HOLINESS Scripture 0123456789')
+      .then(() => document.fonts.ready)
+      .catch(err => {
+        console.warn(`Could not verify font load for ${family}`, err);
+      });
+    fontLoadPromises.set(family, loadPromise);
+  }
+  return fontLoadPromises.get(family);
+}
+
+function ensureTemplateFontsLoaded(template) {
+  const families = [...new Set((template?.zones || []).map(z => z.fontFamily).filter(Boolean))];
+  return Promise.all(families.map(ensureFontLoaded));
+}
 
 function renderEditor() {
   const t = state.selectedTemplate;
@@ -2039,6 +2127,7 @@ function computeEditorScale(w, h) {
 function addZoneToCanvas(zone, scale) {
   const s = scale || computeEditorScale(state.selectedTemplate.width, state.selectedTemplate.height);
   const color = ZONE_COLORS[zone.type];
+  ensureFontLoaded(zone.fontFamily).then(() => fabricCanvas?.requestRenderAll());
 
   // Label preview
   const labelTexts = { verse: '"Verse Text..."', ref: 'John 3:16', day: 'Day 1' };
@@ -2146,6 +2235,23 @@ function refreshZoneList() {
 function selectZoneItem(id) {
   const z = state.selectedTemplate.zones.find(z => z.id === id);
   if (!z) return;
+  editorState.selectedZone = id;
+
+  const fontEl = document.getElementById('prop-font');
+  const sizeEl = document.getElementById('prop-size');
+  const colorEl = document.getElementById('prop-color');
+  const alignEl = document.getElementById('prop-align');
+  const lineHeightEl = document.getElementById('prop-lh');
+  const styleEl = document.getElementById('prop-style');
+  const maxSizeEl = document.getElementById('prop-maxsize');
+  if (fontEl) fontEl.value = z.fontFamily || 'Poppins';
+  if (sizeEl) sizeEl.value = z.fontSize || 32;
+  if (colorEl) colorEl.value = z.color || '#FFFFFF';
+  if (alignEl) alignEl.value = z.align || 'center';
+  if (lineHeightEl) lineHeightEl.value = z.lineHeight || 1.4;
+  if (styleEl) styleEl.value = z.fontStyle || 'normal';
+  if (maxSizeEl) maxSizeEl.value = z.maxFontSize || 48;
+
   // Show props
   const propsEl = document.getElementById('zone-props');
   if (propsEl) {
@@ -2162,7 +2268,31 @@ function selectZoneItem(id) {
 }
 
 function applyZoneProps() {
-  // Props applied at generation time; real-time update would need selected zone tracking
+  const zoneId = editorState.selectedZone;
+  if (!zoneId || !state.selectedTemplate) return;
+  const z = state.selectedTemplate.zones.find(z => z.id === zoneId);
+  if (!z) return;
+
+  Object.assign(z, getDefaultZoneProps());
+  ensureFontLoaded(z.fontFamily).then(() => fabricCanvas?.requestRenderAll());
+
+  if (fabricCanvas) {
+    const sc = computeEditorScale(state.selectedTemplate.width, state.selectedTemplate.height);
+    fabricCanvas.getObjects().forEach(obj => {
+      if (obj.zoneId !== zoneId || obj.type !== 'textbox') return;
+      obj.set({
+        fontFamily: z.fontFamily || 'Poppins',
+        fontSize: Math.min(z.fontSize * sc, 22),
+        fill: z.color || '#ffffff',
+        textAlign: z.align || 'center',
+        fontStyle: z.fontStyle === 'italic' ? 'italic' : 'normal',
+        fontWeight: z.fontStyle === 'bold' ? 'bold' : 'normal',
+      });
+    });
+    fabricCanvas.requestRenderAll();
+  }
+
+  selectZoneItem(zoneId);
 }
 
 function getDefaultZoneProps() {
@@ -2638,7 +2768,9 @@ async function startGeneration() {
     setProgress(5 + Math.round(((i + 1) / total) * 30), `Checking scripture ${i+1}/${total}: ${r.ref}`);
   }
 
-  setProgress(45, 'Rendering flyers...');
+  setProgress(45, 'Loading selected fonts...');
+  await ensureTemplateFontsLoaded(state.selectedTemplate);
+  setProgress(46, 'Rendering flyers...');
 
   // Phase 2: Render
   const generated = [];
@@ -2992,6 +3124,8 @@ async function fetchAllForList(listId) {
 
 
 async function renderFlyer(vd, template, opts) {
+  await ensureTemplateFontsLoaded(template);
+
   return new Promise(resolve => {
     const canvas = document.createElement('canvas');
     canvas.width = template.width;
@@ -3069,23 +3203,19 @@ function drawTextInZone(ctx, text, zone, opts) {
   const minSize = 8;
   const align = zone.align || 'center';
   const lineHeight = zone.lineHeight || 1.4;
-  const fontFamily = zone.fontFamily || 'Poppins';
-  const isBold = zone.fontStyle === 'bold';
-  const isItalic = zone.fontStyle === 'italic';
-  const fontStyleStr = (isBold ? 'bold ' : '') + (isItalic ? 'italic ' : '');
   const color = zone.color || '#ffffff';
 
   // ALWAYS auto-scale: shrink until full text fits — no exceptions, no cutoff
   fontSize = Math.min(fontSize, maxSize);
   while (fontSize > minSize) {
-    ctx.font = `${fontStyleStr}${fontSize}px ${fontFamily}, sans-serif`;
+    ctx.font = getCanvasFont(zone, fontSize);
     const lines = wrapText(ctx, text, zone.width - 16);
     const totalHeight = lines.length * fontSize * lineHeight;
     if (totalHeight <= zone.height - 8) break;
     fontSize -= 0.5;
   }
 
-  ctx.font = `${fontStyleStr}${fontSize}px ${fontFamily}, sans-serif`;
+  ctx.font = getCanvasFont(zone, fontSize);
   ctx.fillStyle = color;
   ctx.textAlign = align;
 
