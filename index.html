@@ -270,6 +270,14 @@ window.KJV_LOOKUP=function(ref){
     border-color: var(--gold);
     background: rgba(201,168,76,0.06);
   }
+  .template-drop-target.drag-over {
+    border-color: var(--gold) !important;
+    box-shadow: 0 0 0 3px rgba(201,168,76,0.18);
+    background: rgba(201,168,76,0.07);
+  }
+  .btn.template-drop-target.drag-over {
+    transform: translateY(-1px);
+  }
   .upload-zone .upload-icon { width: 32px; height: 32px; margin: 0 auto 12px; color: var(--gold-dim); }
   .upload-zone h3 { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
   .upload-zone p { font-size: 13px; color: var(--text-dim); }
@@ -1628,18 +1636,18 @@ function renderTemplates() {
   <div class="topbar">
     <h2>Templates</h2>
     <div class="topbar-actions">
-      <button class="btn btn-secondary" onclick="openAddTemplateModal()">+ New Template</button>
+      <button class="btn btn-secondary template-drop-target" data-template-drop-target onclick="openAddTemplateModal()">+ New Template</button>
     </div>
   </div>
   <div class="page fade-in">
     <p class="section-subtitle">Upload flyer backgrounds and define text placement zones for verse content, references, and day labels.</p>
 
     ${state.templates.length === 0 ? `
-      <div class="card" style="text-align:center;padding:60px">
+      <div class="card template-drop-target" data-template-drop-target style="text-align:center;padding:60px">
         <div class="empty-icon" style="opacity:0.3;margin-bottom:16px">${icon('image')}</div>
         <h3 class="section-title">No Templates Yet</h3>
         <p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">Upload a PNG flyer background to get started.</p>
-        <button class="btn btn-primary" onclick="openAddTemplateModal()">Upload Template</button>
+        <button class="btn btn-primary template-drop-target" data-template-drop-target onclick="openAddTemplateModal()">Upload Template</button>
       </div>
     ` : `
       <div class="grid-3" style="gap:16px">
@@ -1659,7 +1667,7 @@ function renderTemplates() {
             </div>
           </div>
         `).join('')}
-        <div class="template-card" onclick="openAddTemplateModal()" style="cursor:pointer;border-style:dashed">
+        <div class="template-card template-drop-target" data-template-drop-target onclick="openAddTemplateModal()" style="cursor:pointer;border-style:dashed">
           <div class="template-card-preview" style="flex-direction:column;gap:8px">
             <div style="font-size:28px;color:var(--border-bright)">+</div>
             <div style="font-size:12px;color:var(--text-dim)">New Template</div>
@@ -1674,7 +1682,42 @@ function renderTemplates() {
   </div>`;
 }
 
-function openAddTemplateModal() {
+function getDroppedTemplateImageFile(event) {
+  const files = Array.from(event.dataTransfer?.files || []);
+  return files.find(file => file.type.startsWith('image/')) || files[0] || null;
+}
+
+function setupTemplateDropTarget(target) {
+  if (!target || target.dataset.templateDropBound === 'true') return;
+  target.dataset.templateDropBound = 'true';
+
+  const clearDrag = () => target.classList.remove('drag-over');
+  const markDrag = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    target.classList.add('drag-over');
+  };
+
+  target.addEventListener('dragenter', markDrag);
+  target.addEventListener('dragover', markDrag);
+  target.addEventListener('dragleave', e => {
+    if (!target.contains(e.relatedTarget)) clearDrag();
+  });
+  target.addEventListener('drop', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearDrag();
+    const file = getDroppedTemplateImageFile(e);
+    if (!file) {
+      showToast('Drop a PNG or JPG image to create a template.', 'error');
+      return;
+    }
+    openAddTemplateModal(file);
+  });
+}
+
+function openAddTemplateModal(initialFile = null) {
   document.getElementById('add-tpl-modal')?.remove();
   const area = document.getElementById('template-modal-area') || document.body;
   const modalHTML = `
@@ -1745,9 +1788,10 @@ function openAddTemplateModal() {
   zone?.addEventListener('drop', e => {
     e.preventDefault();
     zone.classList.remove('drag-over');
-    const file = e.dataTransfer?.files?.[0];
+    const file = getDroppedTemplateImageFile(e);
     if (file) handleTemplateFile(file);
   });
+  if (initialFile) handleTemplateFile(initialFile);
 }
 
 function handleTemplateFile(file) {
@@ -2324,7 +2368,11 @@ function saveEditorZones() {
   navigate('templates');
 }
 
-function initTemplateUpload() {}
+function initTemplateUpload() {
+  document
+    .querySelectorAll('[data-template-drop-target]')
+    .forEach(setupTemplateDropTarget);
+}
 
 // ============================================================
 //  SCRIPTURE LISTS
